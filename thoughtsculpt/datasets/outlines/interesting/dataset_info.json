@@ -1,0 +1,85 @@
+{
+  "builder_name": "json",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "json",
+  "dataset_size": 17158932,
+  "description": "",
+  "download_checksums": {
+    "/home/yangk/yizhou/workspace/thoughtsculpt/scripts/../thoughtsculpt/datasets/outlines/interesting_or_not_masked_outlines_script.jsonl": {
+      "num_bytes": 17395319,
+      "checksum": null
+    }
+  },
+  "download_size": 17395319,
+  "features": {
+    "premise": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "interesting": {
+      "dtype": "bool",
+      "_type": "Value"
+    },
+    "original_outlines": {
+      "feature": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "new_outlines": {
+      "feature": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "mask": {
+      "feature": {
+        "dtype": "float64",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "input_prompt": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "label": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "input_ids": {
+      "feature": {
+        "dtype": "int32",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    },
+    "attention_mask": {
+      "feature": {
+        "dtype": "int8",
+        "_type": "Value"
+      },
+      "_type": "Sequence"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 34554251,
+  "splits": {
+    "train": {
+      "name": "train",
+      "num_bytes": 17158932,
+      "num_examples": 5000,
+      "dataset_name": "json"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}
