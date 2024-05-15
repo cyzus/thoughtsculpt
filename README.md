@@ -1,5 +1,7 @@
 # thoughtsculpt
 
+Code accompanying the paper: [THOUGHTSCULPT: Reasoning with Intermediate Revision and Search](https://arxiv.org/abs/2404.05966) by Yizhou Chi, Kevin Yang, and Dan Klein
+
 ## Setup
 ```pip install -r requirements.txt```
 
