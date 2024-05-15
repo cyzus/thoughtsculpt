@@ -9,6 +9,8 @@
 
 ```
 from thoughtsculpt.model.simulator import MCTS, DFS, ToT, COT
+from thoughtsculpt.model.improver import ContentImprover
+
 model_name = "gpt-3.5-turbo" # model of your choice
 model = load_model(model_name=model_name, temp=0.7)
 content_improver = ContentImprover(model=model, evaluator=None, solver_class=MCTS)
