@@ -1,5 +1,7 @@
 # thoughtsculpt
 
+Code accompanying the paper: [THOUGHTSCULPT: Reasoning with Intermediate Revision and Search](https://arxiv.org/abs/2404.05966) by Yizhou Chi, Kevin Yang, and Dan Klein
+
 ## Setup
 ```pip install -r requirements.txt```
 
@@ -9,6 +11,8 @@
 
 ```
 from thoughtsculpt.model.simulator import MCTS, DFS, ToT, COT
+from thoughtsculpt.model.improver import ContentImprover
+
 model_name = "gpt-3.5-turbo" # model of your choice
 model = load_model(model_name=model_name, temp=0.7)
 content_improver = ContentImprover(model=model, evaluator=None, solver_class=MCTS)
