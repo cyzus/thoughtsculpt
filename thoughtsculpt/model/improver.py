@@ -1,5 +1,6 @@
 
 from thoughtsculpt.model.node import ContentNode, CrosswordNode, CommonNode
+from thoughtsculpt.model.node24 import Node24
 from thoughtsculpt.model.simulator import MCTS, COT
 
 class ContentImprover:
@@ -79,13 +80,14 @@ class CrosswordImprover:
         return node.position
 
 class CommonGenImprover:
-    def __init__(self, model, solver_class=MCTS):
+    def __init__(self, model, solver_class=MCTS, **kwargs):
 
         self.model = model
         self.solver_class = solver_class
+        self.use_feedback = kwargs.get("use_feedback", True)
     
     def improve(self, concepts, scores={"base":[], "improved":[], "origs":[], "news":[]}, depth=3, verbose=False):
-        node = CommonNode(model=self.model, concepts=concepts)
+        node = CommonNode(model=self.model, concepts=concepts, use_feedback=self.use_feedback)
         solver = self.solver_class()
         best_score = node.get_future_score()
         scores["base"].append(best_score)
@@ -104,7 +106,24 @@ class CommonGenImprover:
         scores["news"].append(node.position)
         return node.position
             
-            
+
+class Game24Improver:
+    def __init__(self, model, solver_class=MCTS):
+        self.model = model
+        self.solver_class = solver_class
+
+    def improve(self, instruction, depth=3):
+        node = Node24(instruction=instruction, model=self.model)
+        solver = self.solver_class(num_candidates=5)
+        best_positions = []
+        for d in range(depth):
+            solver.find_node(node)
+            best_positions.append(solver.choose().position)
+            if node.is_terminal():
+                # print(node.position, "fb", node.feedback)
+                break
+        node = solver.choose()
+        return node.position, solver
             
             
         

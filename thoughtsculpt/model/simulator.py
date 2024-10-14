@@ -2,13 +2,14 @@ from collections import defaultdict
 import numpy as np
 
 class MCTS:
-    def __init__(self, exploration_weight=1, exact=True):
+    def __init__(self, exploration_weight=1, exact=True, num_candidates=3):
         self.Q = defaultdict(int)  # total reward of each node
         self.N = defaultdict(int)  # total visit count for each node
         self.children = dict()  # children of each node
         self.nodes= set()
         self.exploration_weight = exploration_weight
         self.exact = exact
+        self.num_candidates = num_candidates
 
     def find_node(self, node, num_iter=3, depth=1):
         for d in range(depth):
@@ -26,20 +27,18 @@ class MCTS:
                 return float("-inf")  # avoid unseen moves and moves that only explored once
             return self.Q[n] / (1 + self.N[n])  # average reward
         
-        if node is not None and not node.is_terminal():
-            return max(self.children[node], key=score)
-        elif node is not None and node.is_terminal() and node.can_end():
-            return max(self.nodes, key=lambda x: x.reward())
-        elif node is not None and node.is_terminal() and not node.can_end():
-            return max(self.children[node.parent], key=lambda x: x.reward())
-        else:
-            return max(self.nodes, key=lambda x: x.reward())
+        if node is not None:
+            if node.is_terminal():
+                return max(self.nodes, key=lambda x: x.reward())
+            else:
+                return max(self.children[node], key=score)
+        return max(self.nodes, key=lambda x: x.reward())
 
     def do_rollout(self, node):
         "Make the tree one layer better. (Train for one iteration.)"
         path = self._select(node)
         leaf = path[-1]
-        self._expand(leaf)
+        self._expand(leaf, num_candidates=self.num_candidates)
         reward = self._simulate(leaf)
         self._backpropagate(path, reward)
 
@@ -54,14 +53,13 @@ class MCTS:
                 path.append(node)
 
 
-    def _expand(self, node, num_candidates=3):
+    def _expand(self, node, num_candidates=1):
         "Update the `children` dict with the children of `node`"
         self.nodes.add(node)
         if node in self.children and len(self.children[node]) > 0:
             return  # already expanded
-        elif node.is_terminal() and node.can_end():
+        elif node.is_terminal():
             self.children[node] = []
-            
             return
         candidates = node.get_candidates(num_candidates=num_candidates)
         candidates = [n for n in candidates if n not in self.nodes]
@@ -166,9 +164,9 @@ class ToT:
         self.explored_nodes.add(node)
         for i in range(depth):
             if node.is_terminal():
-                if node.can_end():
-                    return node
-                node = node.parent
+                # if node.can_end():
+                return node
+                # node = node.parent
             elif node not in self.children:
                 self.children[node] = node.get_tot_candidates()
             candidates = [n for n in self.children[node] if n not in self.explored_nodes]

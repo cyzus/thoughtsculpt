@@ -1,6 +1,117 @@
-import re
 from nltk.metrics import edit_distance
+import re
 import numpy as np
+import json
+from thoughtsculpt.model.tasks.custom import PROPOSE_PROMPT, INIT_RESPONSE, REVISE_SOLUTIONS
+
+class CustomNode():
+    task_description = ""
+    initial_prompt = INIT_RESPONSE
+    revise_prompt = REVISE_SOLUTIONS
+    base_propose_prompt = PROPOSE_PROMPT
+    solution_output_format = ""
+
+
+    def __init__(self, parent=None, instruction=None, position=None, model=None, **kargs):
+        self.parent = parent
+        self.position = position
+        self.instruction = instruction
+        self.model = model
+        self.propose_prompt = self.task_description + self.base_propose_prompt + self.solution_output_format
+        self.initial_prompt = self.task_description + self.initial_prompt + self.solution_output_format
+        self.revise_prompt = self.task_description + self.revise_prompt
+        self.f = None
+        self.h = None
+        self.g = None
+        self.feedback = None
+        if self.position is None:
+            self.get_init_response()
+
+    def position_to_text(self):
+        return str(self.position)
+    
+    def parse_solution(self, candidate_output):
+        return candidate_output
+    
+    def get_feedback(self):
+        return self.feedback.get("feedback", "No feedback")
+    
+    def is_terminal(self):
+        if self.feedback is None:
+            self.revise_answers()
+        if "correct" in self.feedback:
+            return self.feedback["correct"]
+        elif "score" in self.feedback:
+            return self.feedback["score"] == 10
+        else:
+            return False
+
+    def get_init_response(self):
+        prompt = self.initial_prompt.format(instruction=self.instruction)
+        output = self.model([prompt])[0]
+        self.position = self.parse_solution(output)
+        return self.position
+
+    def revise_answers(self):
+        prompt = self.revise_prompt.format(instruction=self.instruction, solution=self.position)
+        output = self.model([prompt])[0]
+        feedback = self.parse_json_block(output)
+        
+        self.feedback = feedback
+        if not feedback:
+            print(output)
+        return self.get_feedback()
+
+    def propose_candidate(self, feedback):
+        solution = self.position_to_text()
+        prompt = self.propose_prompt.format(solution=solution, feedback=feedback, instruction=self.instruction)
+        candidate_output = self.model([prompt])[0]
+        position = self.parse_solution(candidate_output)
+        return position
+    
+
+    def get_candidates(self, num_candidates=3):
+        if not self.feedback:
+            feedback = self.revise_answers()
+        else:
+            feedback = self.get_feedback()
+        candidates = []
+        for i in range(num_candidates):
+            candidate_position = self.propose_candidate(feedback)
+            if candidate_position in [c.position for c in candidates]:
+                continue
+            candidate = self.__class__(parent=self, instruction=self.instruction, position=candidate_position,
+                                        model=self.model)
+            if candidate == self:
+                continue
+            candidates.append(candidate)
+        return candidates
+    
+    def parse_json_block(self, output):
+        pattern = r'.*```json\n(.*)\n```.*'
+        matched = re.match(pattern, output, re.DOTALL)
+        try: 
+            if matched:
+                json_block = matched.group(1)
+                return json.loads(json_block)
+        except:
+            pass
+        return {}
+
+    def parse_feedback(self, feedback):
+        feedback_dict = self.parse_json_block(feedback)
+        return feedback_dict.get("feedback", "No feedback")
+
+    def reward(self):
+        if not self.feedback:
+            self.revise_answers()
+        if "score" in self.feedback:
+            return self.feedback["score"]
+        elif "correct" in self.feedback:
+            return 10 if self.feedback["correct"] else 0
+        else:
+            return 0
+    
 
 class Node():
     """A node class for Pathfinding"""
@@ -11,9 +122,13 @@ class Node():
         self.f = None
         self.h = None
         self.g = None
+        self.use_feedback = kargs.get("use_feedback", True)
+        self.external_feedback = kargs.get("external_feedback", False)
 
-    def can_end(self):
-        return False
+    def is_terminal(self):
+        if self.f is None:
+            self.compute_scores()
+        return self.f > 0.95
     
     def get_candidates(self, num_candidates):
         return [Node()] * num_candidates
@@ -54,14 +169,13 @@ class Node():
     def compute_scores(self,):
         self.g = self.get_current_score()
         self.h = self.get_future_score()
-        self.f = self.g + self.h
+        self.f = (self.g + self.h)/2
 
 
 class ContentNode(Node):
     def __init__(self, model, 
-                 external_model=None, parent=None, position=None, **kargs):
-        self.parent = parent
-        self.position = position
+                 external_model=None, parent=None, position=None, **kwargs):
+        super().__init__(parent=parent, position=position, **kwargs)
         self.model = model
         self.external_model = external_model
         self.f, self.h, self.g = None, None, None
@@ -87,17 +201,6 @@ class ContentNode(Node):
     def similar_to(self, other):
         similarity =  self.similarity(other)
         return similarity > 0.6
-
-    
-    def compute_scores(self, **kargs):
-        self.g, reason = self.get_current_score()
-        self.h = 0
-        self.f = self.g
-    
-    def is_terminal(self):
-        if self.f is None:
-            self.compute_scores()
-        return self.f > 95
     
     def get_random_candidate(self):
         return self.get_candidates(num_candidates=1)[0]
@@ -142,7 +245,7 @@ class ContentNode(Node):
         return output
 
     
-    def get_future_score(self, reason):
+    def get_future_score(self):
         return 1
     
     def get_current_score(self): # Use an independent evaluator or GPT 
@@ -152,9 +255,9 @@ class ContentNode(Node):
             prompt = EVALUATE_CURRENT.format(outlines_text)
             output = self.model([prompt])[0]
             score, reason = ContentNode.parse_score_reason(output, prompt)
-            return score, reason
+            self.g = score / 100
         else:
-            return self.external_model.predict_interestingness(self.position), ""
+            return self.external_model.predict_interestingness(self.position) / 100
             
     
     def position_to_text(self):
@@ -195,8 +298,8 @@ class ContentNode(Node):
 
 class CrosswordNode(Node):
     confidence_to_value = {'certain': 1, 'high': 0.5, 'medium': 0.2, 'low': 0.1}  
-    def __init__(self, model, env, external_model=None, parent=None, position=None, **kargs):
-        self.parent = parent
+    def __init__(self, model, env, external_model=None, parent=None, position=None, **kwargs):
+        super().__init__(parent=parent, position=position, **kwargs)
         self.env = env
         if position is None:
             self.position = self.env.copy_position()
@@ -225,14 +328,6 @@ class CrosswordNode(Node):
         r_all = (env.board == env.board_gt)
         num_filled_words = np.count_nonzero(self.position["status"])
         return r_all or num_filled_words == 10
-
-    def can_end(self):
-        return self.is_terminal()
-    
-    def compute_scores(self, **kargs):
-        self.g, reason = self.get_current_score()
-        self.h = self.get_future_score(reason)
-        self.f = (self.h + self.g)/2
         
     def revise_answers(self):
         from thoughtsculpt.model.tasks.crosswords import REVISE_SOLUTIONS
@@ -300,17 +395,21 @@ class CrosswordNode(Node):
 
             
     
-    def get_future_score(self, reason):
+    def get_future_score(self):
         count = self.env.prompt_status(self.model)
         score = count["impossible"] * 0.1 / 10 + count["maybe"] * 0.5 / 10 + count["sure"] / 10
         return score / 3
     
     def get_current_score(self):
-        num_filled_words = np.count_nonzero(self.position["status"])
-        word_score = num_filled_words/10
-        num_filled_letters = 25 - self.__str__().count("_")
-        letter_score = num_filled_letters/25
-        return (word_score + letter_score)/2, ""
+        if self.external_feedback:
+            num_filled_words = np.count_nonzero(self.position["status"])
+            word_score = num_filled_words/10
+            num_filled_letters = 25 - self.__str__().count("_")
+            letter_score = num_filled_letters/25
+            self.g = (word_score + letter_score)/2
+        else:
+            self.g = 1
+        return self.g
     
     @staticmethod
     def parse_response(response):
@@ -333,7 +432,8 @@ class CrosswordNode(Node):
             return parts
 
 class CommonNode(Node):
-    def __init__(self, model, concepts, parent=None, position=None):
+    def __init__(self, model, concepts, parent=None, position=None, **kwargs):
+        super().__init__(parent=parent, position=position, **kwargs)
         from thoughtsculpt.model.tasks.commongen import INSTRUCTION
         self.model = model
         self.concepts = concepts
@@ -362,29 +462,21 @@ class CommonNode(Node):
         return output
         
     def get_current_score(self):
-        from thoughtsculpt.model.tasks.commongen import EVALUATE_CURRENT
-        prompt = EVALUATE_CURRENT.format(self.instruction, self.position)
-        output = self.model([prompt])[0]
-        score = CommonNode.parse_score(output)
-        return score
+        if self.g is None:
+            from thoughtsculpt.model.tasks.commongen import EVALUATE_CURRENT
+            prompt = EVALUATE_CURRENT.format(self.instruction, self.position)
+            output = self.model([prompt])[0]
+            score = CommonNode.parse_score(output)
+            self.g = score
+        return self.g
 
     def get_future_score(self):
-        count = len([c for c in self.concepts if c in self.position])
-        return count/len(self.concepts)
-        
-        
-    
-    def compute_scores(self):
-        self.g = self.get_current_score()
-        self.h = self.get_future_score()
-        self.f = (self.g + self.h)/2
-        
-    
-    def can_end(self):
-        if self.h is None:
-            self.compute_scores()
-        return self.h == 1
-    
+        if self.external_feedback:
+            self.h = len([c for c in self.concepts if c in self.position])/len(self.concepts)
+        else:
+            self.h = 0
+        return self.h
+            
     def is_terminal(self):
         if self.h is None:
             self.compute_scores()
@@ -406,16 +498,21 @@ class CommonNode(Node):
         return candidate
 
     def get_candidates(self, num_candidates=3):
-        from thoughtsculpt.model.tasks.commongen import NEW_CANDIDATE, FEEDBACK
+        from thoughtsculpt.model.tasks.commongen import NEW_CANDIDATE
         candidates = []
-        feedback = self.revise_answer()
+        if self.use_feedback:
+            feedback = self.get_feedback()
+        else:
+            feedback = "no feedback"
         
         if feedback == 0 and self.h == 1:
             return candidates
         prompt = NEW_CANDIDATE.format(instruct=self.instruction, solution=self.position, feedback=feedback)
         outputs = self.model([prompt]*num_candidates)
         for output in outputs:
-            candidate = CommonNode(model=self.model, concepts=self.concepts, parent=self, position=CommonNode.parse_sentence(output))
+            candidate = CommonNode(model=self.model, concepts=self.concepts, 
+                                   parent=self, position=CommonNode.parse_sentence(output),
+                                   use_feedback=self.use_feedback)
             candidates.append(candidate)
         return candidates           
     
