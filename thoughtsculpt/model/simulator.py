@@ -53,7 +53,7 @@ class MCTS:
                 path.append(node)
 
 
-    def _expand(self, node, num_candidates=1):
+    def _expand(self, node, num_candidates):
         "Update the `children` dict with the children of `node`"
         self.nodes.add(node)
         if node in self.children and len(self.children[node]) > 0:

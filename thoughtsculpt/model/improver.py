@@ -85,16 +85,19 @@ class CommonGenImprover:
         self.model = model
         self.solver_class = solver_class
         self.use_feedback = kwargs.get("use_feedback", True)
+        self.model2 = kwargs.get("model2", None)
+        self.model2_module = kwargs.get("model2_module", None)
     
     def improve(self, concepts, scores={"base":[], "improved":[], "origs":[], "news":[]}, depth=3, verbose=False):
-        node = CommonNode(model=self.model, concepts=concepts, use_feedback=self.use_feedback)
+        node = CommonNode(model=self.model, concepts=concepts, use_feedback=self.use_feedback,
+                          model2=self.model2, model2_module=self.model2_module)
         solver = self.solver_class()
         best_score = node.get_future_score()
         scores["base"].append(best_score)
         scores["origs"].append(node.position)
         for d in range(depth):
             node = solver.find_node(node)
-            score = node.get_future_score()
+            score = node.get_future_score(force=True)
             best_score = max(score, best_score)
             print("Score:", score)
             if verbose:

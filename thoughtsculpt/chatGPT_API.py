@@ -2,7 +2,7 @@ import time
 import logging
 import json
 import torch
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, pipeline
 from openai import OpenAI
 import os
 import argparse
@@ -187,14 +187,42 @@ class ChatGPT3Summarizer():
         self.summarize['total_output_tokens'] += sum([len(self.tokenizer.encode(o)) for o in outputs])
         return outputs
 
+
+
+class LlamaWrapper():
+    def __init__(self, args):
+        self.args = args
+        self.model_name = args.gpt3_model
+        self.pipeline = pipeline(
+                "text-generation", model=f"{self.model_name}-Instruct", 
+                model_kwargs={"torch_dtype": torch.bfloat16}, device_map="auto", 
+            )
+        self.pipeline.model.eval()
+
+    def __call__(self, texts, max_tokens=None, top_p=None, temperature=None):
+        messages = [[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
+            ] for prompt in texts]
+
+        if max_tokens is None:
+            max_tokens = self.args.max_tokens
+        if temperature is None:
+            temperature = self.args.summarizer_temperature
+        outputs = self.pipeline(messages, max_new_tokens=max_tokens, top_p=top_p, temperature=temperature,
+                 do_sample=True, 
+                 )
+        texts = [output[0]["generated_text"] for output in outputs]
+        texts = [text[-1]["content"] for text in texts]
+        print(texts)
+        return texts
+
+
+
+
 def load_model(model_name='gpt-3.5-turbo', temp = 0.7):
     import argparse
     # set openai.api_key to environment variable OPENAI_API_KEY
-    client = OpenAI(
-        # This is the default and can be omitted
-        api_key=os.environ.get("OPENAI_API_KEY"),
-    )
-
     args = argparse.Namespace()
     args.gpt3_model = model_name
     args.max_tokens = 2048 # output length
@@ -202,6 +230,19 @@ def load_model(model_name='gpt-3.5-turbo', temp = 0.7):
     args.summarizer_temperature = temp
     args.summarizer_frequency_penalty = 0.0
     args.summarizer_presence_penalty = 0.0
-    gpt3 = GPTWrapper(args, client=client)
-    return gpt3
+    if "gpt" in model_name:
+        client = OpenAI(
+            # This is the default and can be omitted
+            api_key=os.environ.get("OPENAI_API_KEY"),
+        )
+
+        gpt3 = GPTWrapper(args, client=client)
+        return gpt3
+    elif "llama" in model_name:
+        return LlamaWrapper(args)
+
+
+if __name__ == "__main__":
+    model = load_model("meta-llama/Meta-Llama-3.1-8B")
+    print(model(["What is the capital of France?", "What is the capital of Germany?"]))
 

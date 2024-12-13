@@ -70,7 +70,7 @@ class CustomNode():
         return position
     
 
-    def get_candidates(self, num_candidates=3):
+    def get_candidates(self, num_candidates):
         if not self.feedback:
             feedback = self.revise_answers()
         else:
@@ -122,6 +122,7 @@ class Node():
         self.f = None
         self.h = None
         self.g = None
+        self.feedback = None
         self.use_feedback = kargs.get("use_feedback", True)
         self.external_feedback = kargs.get("external_feedback", False)
 
@@ -139,7 +140,7 @@ class Node():
     def get_cot_candidate(self):
         return [Node()]
 
-    def get_tot_candidates(self, num_candidates=3):
+    def get_tot_candidates(self, num_candidates):
         candidates = []
         for i in range(num_candidates):
             candidate = self.get_cot_candidate()
@@ -219,7 +220,7 @@ class ContentNode(Node):
     
         
     
-    def get_candidates(self, num_candidates=3):
+    def get_candidates(self, num_candidates):
         from thoughtsculpt.model.tasks.outline import NEW_CANDIDATE
         feedbacks = self.revise_answers(num_candidates=num_candidates, num_items=2)
         # print(feedbacks)
@@ -363,7 +364,7 @@ class CrosswordNode(Node):
             raise ValueError("Couldn't find candidates")
         return candidates
     
-    def get_candidates(self, num_candidates=5):
+    def get_candidates(self, num_candidates):
         from thoughtsculpt.model.tasks.crosswords import NEW_CANDIDATE
         candidates = []
         count = 0
@@ -436,6 +437,8 @@ class CommonNode(Node):
         super().__init__(parent=parent, position=position, **kwargs)
         from thoughtsculpt.model.tasks.commongen import INSTRUCTION
         self.model = model
+        self.model2 = kwargs.get("model2", None)
+        self.model2_module = kwargs.get("model2_module", None)
         self.concepts = concepts
         self.concepts_str = ", ".join(concepts)
         self.instruction = INSTRUCTION.format(self.concepts_str)
@@ -470,8 +473,8 @@ class CommonNode(Node):
             self.g = score
         return self.g
 
-    def get_future_score(self):
-        if self.external_feedback:
+    def get_future_score(self, force=False):
+        if self.external_feedback or force:
             self.h = len([c for c in self.concepts if c in self.position])/len(self.concepts)
         else:
             self.h = 0
@@ -484,34 +487,47 @@ class CommonNode(Node):
     
     def revise_answer(self):
         from thoughtsculpt.model.tasks.commongen import REVISE_SOLUTIONS
-        
+        if self.feedback is not None:
+            return self.feedback
+        if self.model2 is not None and self.model2_module == "revise":
+            model = self.model2
+        else:
+            model = self.model
         prompt = REVISE_SOLUTIONS.format(self.instruction, self.position)
-        output = self.model([prompt])[0]
+        output = model([prompt])[0]
         feedback = CommonNode.parse_revision(output)
+        self.feedback = feedback
         return feedback
         
     def get_cot_candidate(self):
         from thoughtsculpt.model.tasks.commongen import NEW_CANDIDATE_COT
         prompt = NEW_CANDIDATE_COT.format(instruct=self.instruction, solution=self.position)
         output = self.model([prompt])[0]
-        candidate = CommonNode(model=self.model, concepts=self.concepts, parent=self, position=CommonNode.parse_sentence(output))
+        candidate = CommonNode(model=self.model, concepts=self.concepts, 
+                               parent=self, position=CommonNode.parse_sentence(output),
+                               model2=self.model2, model2_module=self.model2_module)
         return candidate
 
-    def get_candidates(self, num_candidates=3):
+    def get_candidates(self, num_candidates):
         from thoughtsculpt.model.tasks.commongen import NEW_CANDIDATE
         candidates = []
         if self.use_feedback:
-            feedback = self.get_feedback()
+            feedback = self.revise_answer()
         else:
             feedback = "no feedback"
         
         if feedback == 0 and self.h == 1:
             return candidates
         prompt = NEW_CANDIDATE.format(instruct=self.instruction, solution=self.position, feedback=feedback)
-        outputs = self.model([prompt]*num_candidates)
+        if self.model2 is not None and self.model2_module == "propose":
+            model = self.model2
+        else:
+            model = self.model
+        outputs = model([prompt]*num_candidates)
         for output in outputs:
             candidate = CommonNode(model=self.model, concepts=self.concepts, 
                                    parent=self, position=CommonNode.parse_sentence(output),
+                                   model2=self.model2, model2_module=self.model2_module,
                                    use_feedback=self.use_feedback)
             candidates.append(candidate)
         return candidates           

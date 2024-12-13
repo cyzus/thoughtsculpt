@@ -9,13 +9,16 @@ solver_classes = {
 }
 model_name_dict = {
     "gpt3.5": "gpt-3.5-turbo",
-    "gpt4": "gpt-4-0125-preview"
+    "gpt4": "gpt-4-0125-preview",
+    "gpt-4o-mini": "gpt-4o-mini",
+    "gpt-4o": "gpt-4o",
+    "llama3-1-8b": "meta-llama/Meta-Llama-3.1-8B"
 }
 
 
 def get_eval_args():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--model", type=str, default="gpt-3.5")
+    parser.add_argument("--model", type=str, default="gpt3.5")
     parser.add_argument("--solver", type=str, default="mcts")
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--mode", type=int, default=0)
